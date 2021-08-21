@@ -1,5 +1,9 @@
 zedit: zedit.c
+	rm -rf build/
+	mkdir build
 	$(CC) zedit.c -o zedit -Wall -Wextra -pedantic -std=c99
 
 debug: zedit.c
-	$(CC) -g zedit.c -o zedit -Wall -Wextra -pedantic -std=c99
+	rm -rf debug/
+	mkdir debug
+	$(CC) -g zedit.c -o debug/zedit -Wall -Wextra -pedantic -std=c99
