@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -10,48 +11,101 @@ struct state {
   int rows;
   int cursor_x;
   int cursor_y;
-  char *buffer;
+  char **buffer;
   int buffer_length;
 };
 
+int get_cursor_position(int *rows, int *cols) {
+  char buf[32];
+  unsigned int i = 0;
+  write(STDOUT_FILENO, "\x1b[6n", 4);
+  while (i < sizeof(buf) - 1) {
+    if (read(STDIN_FILENO, &buf[i], 1) != 1)
+      break;
+    if (buf[i] == 'R')
+      break;
+    i++;
+  }
+  buf[i] = '\0';
+
+  if (buf[0] != '\x1b' || buf[1] != '[')
+    return -1;
+  if (sscanf(&buf[2], "%d;%d", rows, cols) != 2)
+    return -1;
+
+  return 0;
+}
+
 void init(struct state *s, struct termios *original_terminal_state,
           struct termios *terminal_state) {
+  struct winsize w;
+  ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+  s->columns = w.ws_col;
+  s->rows = w.ws_row;
   tcgetattr(STDIN_FILENO, original_terminal_state);
   tcgetattr(STDIN_FILENO, terminal_state);
   cfmakeraw(terminal_state);
   tcsetattr(STDIN_FILENO, TCSAFLUSH, terminal_state);
-  s->buffer_length = 0;
+	s->buffer = malloc(s->rows * sizeof(char *));
+	for (int i = 0; i < s->rows; i++) {
+		s->buffer[i] = malloc(s->columns * sizeof(char));
+	}
   write(STDIN_FILENO, "\x1b[2J", 4);
-  write(STDIN_FILENO, "\x1b[1;1H", 6);
+  write(STDIN_FILENO, "\x1b[H", 3);
 }
 
 void input(struct state *s) {
-  char input[1];
+  char input;
   int input_length = read(STDIN_FILENO, &input, 1);
   if (input_length < 0)
     return;
-  switch (input[0]) {
+  get_cursor_position(&s->cursor_y, &s->cursor_x);
+  switch (input) {
   case 'q':
     s->running = 0;
     break;
-  default: {
-    const int symbol_size = 1;
-    char *buffer = realloc(s->buffer, s->buffer_length + symbol_size);
-    if (buffer == NULL)
+  case '\x1b': {
+    char seq[3];
+    if (read(STDIN_FILENO, &seq[0], 1) != 1)
       return;
-    memcpy(&buffer[s->buffer_length], &input, symbol_size);
-    s->buffer = buffer;
-    s->buffer_length += symbol_size;
+    if (read(STDIN_FILENO, &seq[1], 1) != 1)
+      return;
+
+    switch (seq[1]) {
+    case 'A':
+      s->cursor_y--;
+      break;
+    case 'B':
+      s->cursor_y++;
+      break;
+    case 'C':
+      s->cursor_x++;
+      break;
+    case 'D':
+      s->cursor_x--;
+      break;
+    }
+    char buffer[32];
+    sprintf(buffer, "\x1b[");
+    sprintf(buffer, "%d;%dH", s->cursor_y + 1, s->cursor_x + 1);
+    write(STDIN_FILENO, buffer, sizeof(buffer));
+  } break;
+  default: {
+    memcpy(&s->buffer[s->cursor_y][s->cursor_x], &input,
+           sizeof(input));
   }
   }
 }
 
-void update(struct state *s) {}
+// void update(struct state *s) {}
 
 void display(struct state *s) {
   write(STDIN_FILENO, "\x1b[2J", 4);
-  write(STDIN_FILENO, "\x1b[1;1H", 6);
-  write(STDOUT_FILENO, s->buffer, s->buffer_length);
+	for (int i = 0; i < s->rows; i++) {
+		write(STDOUT_FILENO, s->buffer[i], s->columns);
+		write(STDOUT_FILENO, "\r\n", 2);
+	}
+	write(STDIN_FILENO, "\x1b[H", 3);
 }
 
 void die(struct termios *original_terminal_state) {
@@ -59,7 +113,7 @@ void die(struct termios *original_terminal_state) {
   write(STDIN_FILENO, "\x1b[2J", 4);
 }
 
-int main(int argc, char *argv[]) {
+int main() {
   struct state state = {1, 0, 0, 0, 0, NULL, 0};
   struct termios original_terminal_state;
   struct termios terminal_state;
@@ -67,7 +121,7 @@ int main(int argc, char *argv[]) {
   init(&state, &original_terminal_state, &terminal_state);
   while (state.running) {
     input(&state);
-    update(&state);
+    // update(&state);
     display(&state);
   }
   die(&original_terminal_state);
