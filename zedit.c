@@ -25,7 +25,7 @@ struct state
 void
 save_file (struct state *s)
 {
-	if (*s->filename)
+	if (strlen(s->filename) < 1)
 		sprintf(s->filename, "buffer");
 	FILE *file = fopen (s->filename, "w");
 	for (int i = 0; i < s->rows; i++)
