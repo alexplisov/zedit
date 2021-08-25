@@ -7,6 +7,9 @@
 
 #define CTRL_KEY(k) ((k)&0x1f)
 
+struct state;
+void display(struct state *s);
+
 struct state
 {
 	int running;
@@ -22,6 +25,8 @@ struct state
 void
 save_file (struct state *s)
 {
+	if (*s->filename)
+		sprintf(s->filename, "buffer");
 	FILE *file = fopen (s->filename, "w");
 	for (int i = 0; i < s->rows; i++)
 		{
@@ -33,12 +38,17 @@ save_file (struct state *s)
 void
 load_file (struct state *s)
 {
+	if (!*s->filename)
+		return;
 	FILE *file = fopen (s->filename, "r");
-	for (int i = 0; i < s->rows; i++)
+	if (file)
 		{
-			fread (s->buffer[i], s->columns * sizeof (char), 1, file);
+			for (int i = 0; i < s->rows; i++)
+				{
+					fread (s->buffer[i], s->columns * sizeof (char), 1, file);
+				}
+			fclose (file);
 		}
-	fclose (file);
 }
 
 int
@@ -77,7 +87,6 @@ init (struct state *s, struct termios *original_terminal_state,
 	tcgetattr (STDIN_FILENO, terminal_state);
 	cfmakeraw (terminal_state);
 	tcsetattr (STDIN_FILENO, TCSAFLUSH, terminal_state);
-
 	unsigned long rows_size = s->rows * sizeof (char *);
 	s->buffer = malloc (rows_size);
 	memset (s->buffer, 0, rows_size);
@@ -86,16 +95,12 @@ init (struct state *s, struct termios *original_terminal_state,
 			unsigned long columns_size = s->columns * sizeof (char);
 			s->buffer[i] = malloc (columns_size);
 			memset (s->buffer[i], 32, columns_size);
-			/*
-			for (int j = 0; j < s->columns; j++)
-				{
-					s->buffer[i][j] = 32;
-				}
-				*/
 		}
 	write (STDIN_FILENO, "\x1b[2J", 4);
 	write (STDIN_FILENO, "\x1b[H", 3);
 	get_cursor_position (&s->cursor_y, &s->cursor_x);
+	load_file (s);
+	display(s);
 }
 
 void
@@ -182,7 +187,7 @@ die (struct termios *original_terminal_state)
 int
 main (int argc, char *argv[])
 {
-	struct state state = { 1, 0, 0, 0, 0, NULL, 0, "buffer" };
+	struct state state = { 1, 0, 0, 0, 0, NULL, 0, "" };
 	struct termios original_terminal_state;
 	struct termios terminal_state;
 
