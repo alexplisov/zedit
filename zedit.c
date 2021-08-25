@@ -77,14 +77,21 @@ init (struct state *s, struct termios *original_terminal_state,
 	tcgetattr (STDIN_FILENO, terminal_state);
 	cfmakeraw (terminal_state);
 	tcsetattr (STDIN_FILENO, TCSAFLUSH, terminal_state);
-	s->buffer = malloc (s->rows * sizeof (char *));
+
+	unsigned long rows_size = s->rows * sizeof (char *);
+	s->buffer = malloc (rows_size);
+	memset (s->buffer, 0, rows_size);
 	for (int i = 0; i < s->rows; i++)
 		{
-			s->buffer[i] = malloc (s->columns * sizeof (char));
+			unsigned long columns_size = s->columns * sizeof (char);
+			s->buffer[i] = malloc (columns_size);
+			memset (s->buffer[i], 32, columns_size);
+			/*
 			for (int j = 0; j < s->columns; j++)
-			{
-				s->buffer[i][j] = 32;
-			}
+				{
+					s->buffer[i][j] = 32;
+				}
+				*/
 		}
 	write (STDIN_FILENO, "\x1b[2J", 4);
 	write (STDIN_FILENO, "\x1b[H", 3);
@@ -173,11 +180,17 @@ die (struct termios *original_terminal_state)
 }
 
 int
-main ()
+main (int argc, char *argv[])
 {
 	struct state state = { 1, 0, 0, 0, 0, NULL, 0, "buffer" };
 	struct termios original_terminal_state;
 	struct termios terminal_state;
+
+	// TODO: clear this shit out on refactoring.
+	if (argc > 1)
+		{
+			sprintf (state.filename, "%s", argv[1]);
+		}
 
 	init (&state, &original_terminal_state, &terminal_state);
 	while (state.running)
