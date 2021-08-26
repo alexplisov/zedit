@@ -8,7 +8,7 @@
 #define CTRL_KEY(k) ((k)&0x1f)
 
 struct state;
-void display(struct state *s);
+void display (struct state *s);
 
 struct state
 {
@@ -20,13 +20,14 @@ struct state
 	char **buffer;
 	int buffer_length;
 	char filename[255];
+	int modified;
 };
 
 void
 save_file (struct state *s)
 {
-	if (strlen(s->filename) < 1)
-		sprintf(s->filename, "buffer");
+	if (strlen (s->filename) < 1)
+		sprintf (s->filename, "buffer");
 	FILE *file = fopen (s->filename, "w");
 	for (int i = 0; i < s->rows; i++)
 		{
@@ -82,7 +83,7 @@ init (struct state *s, struct termios *original_terminal_state,
 	struct winsize w;
 	ioctl (STDOUT_FILENO, TIOCGWINSZ, &w);
 	s->columns = w.ws_col;
-	s->rows = w.ws_row;
+	s->rows = w.ws_row - 1;
 	tcgetattr (STDIN_FILENO, original_terminal_state);
 	tcgetattr (STDIN_FILENO, terminal_state);
 	cfmakeraw (terminal_state);
@@ -100,7 +101,7 @@ init (struct state *s, struct termios *original_terminal_state,
 	write (STDIN_FILENO, "\x1b[H", 3);
 	get_cursor_position (&s->cursor_y, &s->cursor_x);
 	load_file (s);
-	display(s);
+	display (s);
 }
 
 void
@@ -117,6 +118,7 @@ input (struct state *s)
 			break;
 		case CTRL_KEY ('s'):
 			save_file (s);
+			s->modified = 0;
 			break;
 		case 13:
 			s->cursor_x = 0;
@@ -154,6 +156,7 @@ input (struct state *s)
 			{
 				memcpy (&s->buffer[s->cursor_y][s->cursor_x - 1], &input,
 						sizeof (input));
+				s->modified = 1;
 				s->cursor_x++;
 			}
 		}
@@ -171,6 +174,18 @@ display (struct state *s)
 			write (STDOUT_FILENO, s->buffer[i], s->columns);
 			write (STDOUT_FILENO, "\r\n", 2);
 		}
+	char status_line[s->columns];
+	sprintf (status_line, "File: %s %s",
+			 strlen (s->filename) > 0 ? s->filename : "*new_buffer*",
+			 s->modified ? "[+]" : "");
+	unsigned long symbols_left = s->columns - strlen(status_line);
+	char status_whitespace[symbols_left];
+	memset(status_whitespace, 32, symbols_left);
+	write (STDOUT_FILENO, "\x1b[30;42m", 8);
+	write (STDOUT_FILENO, status_line, strlen (status_line));
+	write(STDOUT_FILENO, status_whitespace, strlen(status_whitespace));
+	write (STDOUT_FILENO, "\x1b[0m", 4);
+	write (STDOUT_FILENO, "\r\n", 2);
 	char buffer[32];
 	sprintf (buffer, "\x1b[%d;%dH", s->cursor_y, s->cursor_x);
 	write (STDIN_FILENO, buffer, strlen (buffer));
@@ -187,7 +202,7 @@ die (struct termios *original_terminal_state)
 int
 main (int argc, char *argv[])
 {
-	struct state state = { 1, 0, 0, 0, 0, NULL, 0, "" };
+	struct state state = { 1, 0, 0, 0, 0, NULL, 0, "", 0 };
 	struct termios original_terminal_state;
 	struct termios terminal_state;
 
